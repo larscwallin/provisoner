@@ -38,6 +38,13 @@ class Provisioner {
     const GATEWAY_INSTALLED = 53;
     const AUTHHEADER = 'modAuth: ';
 
+
+    /**
+     * @var debugmode Flags if debug messages should be logged.
+     * @access public
+     */
+    public $debugmode = true;
+
     /**
      * @var config local configuration settings
      * @access public
@@ -149,9 +156,17 @@ class Provisioner {
      */
     function initialize($ctx = 'mgr') {
 
-        /* MODx provides us with the 'namespace_path' config setting
+
+	if($this->debugmode){
+		$this->modx->setLogLevel(modX::LOG_LEVEL_DEBUG);
+	}
+
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner.initialize()' );
+        
+	/* MODx provides us with the 'namespace_path' config setting
         * when loading custom manager pages. Set our base and core paths */
         $this->config['base_path'] = $this->modx->getOption('provisioner.core_path',null,$this->modx->getOption('core_path').'components/provisioner/');
+
         //$this->modx->config['namespace_path'];
         $this->config['core_path'] = $this->config['base_path'];
 
@@ -209,6 +224,9 @@ class Provisioner {
 
         /* Create the remote header site identity string for Revolution installations */
         $this->_siteIdString = Provisioner::AUTHHEADER . $this->_siteId;
+
+
+
     }
 
     /**
@@ -1178,9 +1196,6 @@ class Provisioner {
         $user->set('username', $userdata['username']);
         $user->set('password', $userdata['password']);
         $user->set('cachepwd', "");
-        if ( $this->_remoteIsEvo ) {
-            $user->set('hash_class', 'hashing.modMD5');
-        }
         if ($user->save() == false) {
 
             $errorstring = $this->modx->lexicon('failedtocreatelocaluser');
@@ -1360,14 +1375,20 @@ class Provisioner {
         $elementedata = array();
         $doConvert = false;
 
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._getSingleElement()' );
+
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._getSingleElement() : Element type is "'.$type.'".' );
+
         /* Get the element by its type */
         switch ( $type ) {
 
             case "snippet":
 
                 if ( $this->_remoteIsEvo ) {
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._getSingleElement() : Remote site is Evo.' );
                     $url = $this->_connectorURL."/assets/snippets/revogateway/connectors/index.php?action=get&entity=elements&id=$id&type=$type";
                 } else {
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._getSingleElement() : Remote site is Revo.' );
                     curl_setopt($this->_curlSession, CURLOPT_HTTPHEADER, array($this->_siteIdString));
                     $url = $this->_connectorURL."/element/snippet.php?action=get&id=$id";
                 }
@@ -2176,8 +2197,9 @@ class Provisioner {
      *
      */
    function importEvoSite($importArray, $context, $parent, $abort, $timeout, &$errorstring) {
-
         $result = false;
+
+	$importArray['resources'] = false;
 
         /* 'Have' flags */
         $getCategories = false;
@@ -2204,19 +2226,26 @@ class Provisioner {
         $tvMap = array();
         $pluginMap = array();
 
+	$iterator = 0;
+
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner.importEvoSite()' );
+
         /* Logged in check */
         if ( !$this->_loggedin ) {
-
             $errorstring = $this->modx->lexicon('notloggedin');
             return false;
-        }
+        }else{	
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner.importEvoSite() : User login check passed.' );
+	}
         
         /* Evolution site check */
         if ( !$this->_remoteIsEvo ) {
 
             $errorstring = $this->modx->lexicon('notevosite');
             return false;
-        }
+        }else{
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner.importEvoSite() : Remote site confirmed as Evo.' );
+	}
 
         /* Abort check */
         if ( $abort ) {
@@ -2224,10 +2253,14 @@ class Provisioner {
 
             /* Return a successful abort! */
             return true;
-        }
+        }else{
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner.importEvoSite() : Continuing.' );
+	}	
 
         /* Set the time limit, or try to */
         set_time_limit($timeout);
+
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner.importEvoSite() : Successfully set timeout to '.$timeout.'.' );
         
         /* Set the base include flags */
         $smartmode = true;
@@ -2236,6 +2269,8 @@ class Provisioner {
         /* Load a tag translator */
         $this->modx->loadClass('modParser095', '', false, true);
         $translator= new modParser095($this->modx);
+
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner.importEvoSite() : Successfully loaded tag translator.' );
 
         /*
          * Importation of requested elements starts here
@@ -2247,250 +2282,390 @@ class Provisioner {
         /* Get all resources if asked for */
         if ( $importArray['resources'] ) {
 
-            $this->_importLogHeader("Getting resources .........");
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner.importEvoSite() : Getting all Evo resources.' );
 
-            $result = $this->_getAllEvoResources($evoResources, $evoKeywords,
-                                                 $evoMetatags, $evoDocgroups,
-                                                 $smartmode, $errorstring);
-            if ( !$result ) return false;
+		$this->_importLogHeader("Getting resources .........");
 
-            /* Set the 'have' flags */
-            $resourceNo = count($evoResources);
-            $keywordsNo = count($evoKeywords);
-            $metatagsNo = count($evoMetatags);
-            $docGroupsNo = count($evoDocgroups);
+		$result = $this->_getAllEvoResources($evoResources, $evoKeywords,
+		                                         $evoMetatags, $evoDocgroups,
+		                                         $smartmode, $errorstring);
+		if ( !$result ){ 
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner.importEvoSite() : _getAllEvoResources returned false. Aborting.' );
+			return false;
+		}else{
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner.importEvoSite() : _getAllEvoResources returned results.' );
+		}
 
-            if ( $resourceNo != 0 ) $haveResources = true;
+		/* Set the 'have' flags */
+		$resourceNo = count($evoResources);
+		$keywordsNo = count($evoKeywords);
+		$metatagsNo = count($evoMetatags);
+		$docGroupsNo = count($evoDocgroups);
+
+		if ( $resourceNo != 0 ) $haveResources = true;
             
-            /* No keywords or metatags in 2.1 */
-            $this->modx->getVersionData();
-            if (version_compare($this->modx->version['full_version'], '2.0.8-pl', '<=')) {
-            
-				if ( $keywordsNo != 0 ) $haveKeywords = true;
-				if ( $metatagsNo != 0 ) $haveMetatags = true;
-			}
+		/* No keywords or metatags in 2.1 */
+		$this->modx->getVersionData();
+
+		if (version_compare($this->modx->version['full_version'], '2.0.8-pl', '<=')) {
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Local MODx version is less or equal to 2.0.8.' );
+
+			if ( $keywordsNo != 0 ) $haveKeywords = true;
+			if ( $metatagsNo != 0 ) $haveMetatags = true;
+		}else{
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Local MODx version is 2.1 or higher.' );
+		}
 			
-            if ( $docGroupsNo != 0 ) $haveDocgroups = true;
+		if ( $docGroupsNo != 0 ) $haveDocgroups = true;
 
-            $this->_importLog("Got $resourceNo resources");
-            $this->_importLog("Got $keywordsNo keywords");
-            $this->_importLog("Got $metatagsNo metatags");
-            $this->_importLog("Got $docGroupsNo docgroups");
-        }
+		$this->_importLog("Got $resourceNo resources");
+		$this->_importLog("Got $keywordsNo keywords");
+		$this->_importLog("Got $metatagsNo metatags");
+		$this->_importLog("Got $docGroupsNo docgroups");
+
+        } // if ( $importArray['resources'] )
         
         /* Get all templates if asked for */
         if ( $importArray['templates'] ) {
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Getting templates.' );
 
-            $this->_importLogHeader("Getting templates .........");
+		$this->_importLogHeader("Getting templates .........");
 
-            $result = $this->_getAllEvoElements($evoTemplates, "template", $errorstring);
-            if ( !$result ) return false;
+		$result = $this->_getAllEvoElements($evoTemplates, "template", $errorstring);
+		if ( !$result ){
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _getAllEvoElements returned false. Aborting.' );
+			return false;
+		}else{
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _getAllEvoElements returned results.' );
+		}
 
-            /* Set the 'have' flag */
-            $templateNo = count($evoTemplates);
-            if ( $templateNo != 0 ) $haveTemplates = true;
-            $this->_importLog("Got $templateNo templates");
+		/* Set the 'have' flag */
+		$templateNo = count($evoTemplates);
+		if ( $templateNo != 0 ) $haveTemplates = true;
+		$this->_importLog("Got $templateNo templates");
 
-            /* if we have this element we need categories */
-            $getCategories = true;
-        }
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : We have '.$templateNo.' templates to import.' );
+
+		/* if we have this element we need categories */
+		$getCategories = true;
+        }// if ( $importArray['templates'] )
 
         /* Get all tv's if asked for */
         if ( $importArray['tvs'] ) {
 
-            $this->_importLogHeader("Getting TV's .........");
+        	$this->_importLogHeader("Getting TV's .........");
 
-            $result = $this->_getAllEvoElements($evoTvs, "tv", $errorstring);
-            if ( !$result ) return false;
-            
-            /* Set the 'have' flag */
-            $tvNo = count($evoTvs);
-            if ( $tvNo != 0 ) $haveTvs = true;
-            $this->_importLog("Got $tvNo TV's");
-            
-            /* If smart mode is on get the associated data */
-            if ( $smartmode ) {
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : We have '.$templateNo.' templates to import.' );
 
-                $this->_importLogHeader("Getting associated TV data .........");
+		$result = $this->_getAllEvoElements($evoTvs, "tv", $errorstring);
+		
+		if ( !$result ){
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _getAllEvoElements returned false. Aborting.' );
+			return false;
+		}else{
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _getAllEvoElements returned results.' );
+		}
 
-                $result = $this->_getAllEvoTVData($evoTvAccess, $evoTvTemplate,
-                                                  $evoTvContent, $errorstring);
+		/* Set the 'have' flag */
+		$tvNo = count($evoTvs);
+		if ( $tvNo != 0 ) $haveTvs = true;
+		$this->_importLog("Got $tvNo TV's");
+		
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : We have '.$tvNo.' to import.' );
 
-                $tvAccessNo = count($evoTvAccess);
-                $tvTemplateNo = count($evoTvTemplate);
-                $tvContentNo = count($evoTvContent);
+		/* If smart mode is on get the associated data */
+		if ( $smartmode ) {
+			
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Using smartmode. Getting associated TV data' );
 
-                if ( $tvAccessNo != 0 ) $haveTvAccess = true;
-                if ( $tvTemplateNo != 0 ) $haveTvTemplate = true;
-                if ( $tvContentNo != 0 ) $haveTvContent = true;
+			$this->_importLogHeader("Getting associated TV data .........");
 
-                $this->_importLog("Got $tvAccessNo TV -> resource group records");
-                $this->_importLog("Got $tvTemplateNo TV -> template records");
-                $this->_importLog("Got $tvContentNo TV -> resource records");
-                
-            }
+			$result = $this->_getAllEvoTVData($evoTvAccess, $evoTvTemplate,
+						          $evoTvContent, $errorstring);
 
-            /* if we have this element we need categories */
-            $getCategories = true;
-        }
+			$tvAccessNo = count($evoTvAccess);
+			$tvTemplateNo = count($evoTvTemplate);
+			$tvContentNo = count($evoTvContent);
+
+			if ( $tvAccessNo != 0 ) $haveTvAccess = true;
+			if ( $tvTemplateNo != 0 ) $haveTvTemplate = true;
+			if ( $tvContentNo != 0 ) $haveTvContent = true;
+
+			$this->_importLog("Got $tvAccessNo TV -> resource group records");
+			$this->_importLog("Got $tvTemplateNo TV -> template records");
+			$this->_importLog("Got $tvContentNo TV -> resource records");
+
+		}else{
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Not configured to use smartmode. Skipping associated TV data' );
+
+		}
+
+		/* if we have this element we need categories */
+		$getCategories = true;
+        } // if ( $importArray['tvs'] )
+
 
         /* Get all snippets if asked for */
         if ( $importArray['snippets'] ) {
 
-            $this->_importLogHeader("Getting snippets .........");
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Getting snippets.' );
 
-            $result = $this->_getAllEvoElements($evoSnippets, "snippet", $errorstring);
-            if ( !$result ) return false;
+		$this->_importLogHeader("Getting snippets .........");
 
-             /* Set the 'have' flag */
-            $snippetNo = count($evoSnippets);
-            if ( $snippetNo != 0 ) $haveSnippets = true;
-            $this->_importLog("Got $snippetNo snippets");
+		$result = $this->_getAllEvoElements($evoSnippets, "snippet", $errorstring);
+		if ( !$result ){
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _getAllEvoElements returned false. Aborting.' );
+			return false;
+		}else{
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _getAllEvoElements returned results.' );
 
-            /* if we have this element we need categories */
-            $getCategories = true;
-        }
+		}
+
+		/* Set the 'have' flag */
+		$snippetNo = count($evoSnippets);
+		if ( $snippetNo != 0 ) $haveSnippets = true;
+		$this->_importLog("Got $snippetNo snippets");
+
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : We have '.$snippetNo.' snippets to import.' );
+
+		/* if we have this element we need categories */
+		$getCategories = true;
+        } // if ( $importArray['snippets'] )
 
         /* Get all chunks if asked for */
         if ( $importArray['chunks'] ) {
+		
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Getting chunks.' );
 
-            $this->_importLogHeader("Getting chunks .........");
+		$this->_importLogHeader("Getting chunks .........");
 
-            $result = $this->_getAllEvoElements($evoChunks, "chunk", $errorstring);
-            if ( !$result ) return false;
+		$result = $this->_getAllEvoElements($evoChunks, "chunk", $errorstring);
+		if ( !$result ){
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _getAllEvoElements returned false. Aborting.' );
+			return false;
+		}else{
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _getAllEvoElements returned results.' );
+		}
 
-             /* Set the 'have' flag */
-            $chunkNo = count($evoChunks);
-            if ( $chunkNo != 0 ) $haveChunks = true;
-            $this->_importLog("Got $chunkNo chunks");
+		/* Set the 'have' flag */
+		$chunkNo = count($evoChunks);
+		if ( $chunkNo != 0 ) $haveChunks = true;
+		$this->_importLog("Got $chunkNo chunks");
 
-            /* if we have this element we need categories */
-            $getCategories = true;
-        }
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : We have '.$chunkNo.' chunks to import.' );
+
+		/* if we have this element we need categories */
+		$getCategories = true;
+        } // if ( $importArray['chunks'] )
 
         /* Get all plugins if asked for */
         if ( $importArray['plugins'] ) {
 
-            $this->_importLogHeader("Getting plugins .........");
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Getting plugins.' );
 
-            $result = $this->_getAllEvoElements($evoPlugins, "plugin", $errorstring);
-            if ( !$result ) return false;
+		$this->_importLogHeader("Getting plugins .........");
 
-             /* Set the 'have' flag */
-            $pluginNo = count($evoPlugins);
-            if ( $pluginNo != 0 ) $havePlugins = true;
-            $this->_importLog("Got $pluginNo plugins");
+		$result = $this->_getAllEvoElements($evoPlugins, "plugin", $errorstring);
+		if ( !$result ){
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _getAllEvoElements returned false. Aborting.' );
+			return false;
+		}else{
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _getAllEvoElements returned results.' );
+		}
 
-            /* If smart mode is on get the associated data */
-            if ( $smartmode ) {
+		/* Set the 'have' flag */
+		$pluginNo = count($evoPlugins);
+		if ( $pluginNo != 0 ) $havePlugins = true;
+		$this->_importLog("Got $pluginNo plugins");
 
-                $this->_importLogHeader("Getting plugin events.........");
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : We have '.$pluginNo.' plugins to import.' );
 
-                $result = $this->_getAllEvoPluginEvents($evoPluginEvent, $evoPluginEventMap,
-                                                        $errorstring);
-                
-                $pluginEventNo = count($evoPluginEventMap);
-                if ( $pluginEventNo != 0 ) $havePluginEvent = true;
-                $this->_importLog("Got $pluginEventNo plugin events");
+		/* If smart mode is on get the associated data */
+		if ( $smartmode ) {
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Using smartmode. Getting associated plugin events.' );
 
-            }
+			$this->_importLogHeader("Getting plugin events.........");
 
-            /* if we have this element we need categories */
-            $getCategories = true;
-        }
+			$result = $this->_getAllEvoPluginEvents($evoPluginEvent, $evoPluginEventMap,
+						                $errorstring);
+
+			$pluginEventNo = count($evoPluginEventMap);
+			if ( $pluginEventNo != 0 ) $havePluginEvent = true;
+			$this->_importLog("Got $pluginEventNo plugin events");
+
+		}else{
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Not configured to use smartmode. skipping associated plugin events.' );
+		}
+
+		/* if we have this element we need categories */
+		$getCategories = true;
+        } // if ( $importArray['plugins'] )
 
         /* Get all categories if we need them */
         if ( $getCategories ) {
 
-            $this->_importLogHeader("Getting categories .........");
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Getting categories.' );
+		
+		$this->_importLogHeader("Getting categories .........");
 
-            $result = $this->_getAllEvoElements($evoCategories, "category", $errorstring);
-            if ( !$result ) return false;
+		$result = $this->_getAllEvoElements($evoCategories, "category", $errorstring);
+		if ( !$result ){
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _getAllEvoElements returned false. Aborting.' );
+			return false;
+		}else{
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _getAllEvoElements returned results.' );
+		}
 
-            $categoryNo = count($evoCategories);
-            if ( $categoryNo != 0 ) $haveCategories = true;
-            $this->_importLog("Got $categoryNo categories");
-        }
+		$categoryNo = count($evoCategories);
+		if ( $categoryNo != 0 ) $haveCategories = true;
+		$this->_importLog("Got $categoryNo categories");
+
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : We have '.$categoryNo.' categories to import.' );
+
+
+        } // if ( $getCategories )
 
         /*
-         * Creation processing starts here
+	* ---------------------------------------------------------------------------------------------------
+        * Creation processing starts here
+	* ---------------------------------------------------------------------------------------------------
         */
 
-
-        /* Firstly if we have categories we need them, so create them */
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, '' );
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : --------------------------------------' );
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Creation processing starts here' );
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : --------------------------------------' );
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, '' );
+        
+	/* Firstly if we have categories we need them, so create them */
         if ( $haveCategories ) {
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Importing categories' );
 
-            $this->_importLogHeader("Creating categories .........");
+		$this->_importLogHeader("Creating categories .........");
 
-            /* Delete existing if requested */
-            if ( $deletebefore ) {
-                
-                $result = $this->_deleteElements('modCategory', $errorstring);
-                if ( !$result ) return false;              
-            }
+		/* Delete existing if requested */
+		if ( $deletebefore ) {
+			$result = $this->_deleteElements('modCategory', $errorstring);
+			if ( !$result ){
+				if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _deleteElements returned false. Aborting.' );
+				return false;
+			}else{
+				if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _deleteElements returned true.' );
+			}              
+		}
 
-            /* Create */
-            foreach ($evoCategories as $category ) {
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Going into the Create foreach.' );
 
-                /* Re parent if requested */
-                if ( $parent ) $category['parent'] = $this->_category;
+		/* Create */
+		foreach ($evoCategories as $category ) {
+			$iterator++;
 
-                /* Create them */
-                $categoryObject = $this->modx->newObject('modCategory');
-                $categoryObject->fromArray($category);
-                if ($categoryObject->save() == false) {
+			/* Re parent if requested */
+			if ( $parent ){
+				if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Configured to assign new parent.' );
+				$category['parent'] = $this->_category;
+			}else{
 
-                        $errorstring = $this->modx->lexicon('evoimportcatfail');
-                        $errorstring .= $category['category'];
-                        return false;
-                }
+			}
 
-                $name = $category['category'];
-                $this->_importLog("Created category $name ");
+			/*
+				Make sure we dont make duplicates
+			*/
+			$categoryObject = $this->modx->getObject('modCategory',array('category'=>$category['category']));
+			if($categoryObject){
+				if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Category exists. Removing.' );
+				$categoryObject->remove();
+				unset($categoryObject);
+			}else{
 
-                /* Update the map */
-                $categoryMap[$category['id']] = $categoryObject->get('id');
-            }
-        }
+			}
+
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Creating Category.' );
+
+			/* Create them */
+			$categoryObject = $this->modx->newObject('modCategory');
+			$categoryObject->fromArray($category);
+
+			if ($categoryObject->save() == false) {
+				
+				if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Unable to save category object "'.json_encode($category).'". Aborting.' );
+
+				$errorstring = $this->modx->lexicon('evoimportcatfail');
+				$errorstring .= $category['category'];
+				return false;
+			}
+
+			$name = $category['category'];
+			$this->_importLog("Created category $name ");
+
+			/* Update the map */
+			$categoryMap[$category['id']] = $categoryObject->get('id');
+		}
+
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Exited the Create foreach. Processed '.$iterator.' categories.' );
+		
+
+        } // if ( $haveCategories )
 
         /* Next, get the templates if needed and assign them the new categories */
         if ( $haveTemplates ) {
 
-             $this->_importLogHeader("Creating templates .........");
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Importing templates.' );
 
-            /* Delete existing if requested */
-            if ( $deletebefore ) {
+		$this->_importLogHeader("Creating templates .........");
 
-                $result = $this->_deleteElements('modTemplate', $errorstring);
-                if ( !$result ) return false;
-            }
+		/* Delete existing if requested */
+		if ( $deletebefore ) {
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Deleting existing templates.' );
 
-            foreach ($evoTemplates as $template ) {
+			$result = $this->_deleteElements('modTemplate', $errorstring);
+			if ( !$result ){
+				if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _deleteElements returned false. Aborting.' );
+				return false;
+			}else{
+				if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _deleteElements returned true.' );
+			}
+		}else{
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Keeping existing templates.' );
 
-                 $template['category'] = $categoryMap[$template['category']];
+		}
 
-                 /* Tag convert */
-                 $translator->translate($template['content']);
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Going into the Create foreach.' );
 
-                 /* Create them */
-                 $templateObject = $this->modx->newObject('modTemplate');
-                 $templateObject->fromArray($template);
-                 if ($templateObject->save() == false) {
+		$iterator = 0;
 
-                        $errorstring = $this->modx->lexicon('evoimporttemplatefail');
-                        $errorstring .= $template['templatename'];
-                        return false;
-                }
+		foreach ($evoTemplates as $template ) {
+			$iterator++;
 
-                $name = $template['templatename'];
-                $this->_importLog("Created template $name ");
+			 $template['category'] =  array_key_exists($template['category'],$categoryMap) ? $categoryMap[$template['category']] : 0;
 
-                /* Update the map */
-                $templateMap[$template['id']] = $templateObject->get('id');
+			//$template['category'] = $categoryMap[$template['category']];
 
-             }
+			/* Tag convert */
+			$translator->translate($template['content']);
 
-        }
+			/* Create them */
+			$templateObject = $this->modx->newObject('modTemplate');
+			$templateObject->fromArray($template);
+
+			if ($templateObject->save() == false) {
+				if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : modTemplate->save() returned false. Aborting.' );
+				$errorstring = $this->modx->lexicon('evoimporttemplatefail');
+				$errorstring .= $template['templatename'];
+				return false;
+			}
+
+			$name = $template['templatename'];
+			$this->_importLog("Created template $name ");
+
+			/* Update the map */
+			$templateMap[$template['id']] = $templateObject->get('id');
+
+		}
+
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Exiting foreach. '.$iterator.' templates was imported.' );
+
+        } // if ( $haveTemplates )
 
         /* Next, get the resources if needed and assign them the new templates
          * if we have them, then re-parent the resources into the local tree.
@@ -2663,7 +2838,7 @@ class Provisioner {
              
             } // Smart mode
 
-       } // Have resources
+       } // if ( $haveResources )
 
        /* Next, get the TV's if needed and assign them the new categories */
         if ( $haveTvs ) {
@@ -2679,12 +2854,27 @@ class Provisioner {
 
             foreach ($evoTvs as $tv ) {
 
-                 $tv['category'] = $categoryMap[$tv['category']];
+		$tv['category'] =  array_key_exists($tv['category'],$categoryMap) ? $categoryMap[$tv['category']] : 0;
+                 
+		//$tv['category'] = $categoryMap[$tv['category']];
 
                  /* Tag convert */
                  $translator->translate($tv['default_text']);
                  $translator->translate($tv['display']);
                  $translator->translate($tv['display_params']);
+
+		/*
+			Make sure we dont make duplicates
+		*/
+		$tvObject = $this->modx->getObject('modTemplateVar',array('name'=>$tv['name']));
+
+		if($tvObject){
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : TV exists. Removing.' );
+			$tvObject->remove();
+			unset($tvObject);
+		}else{
+
+		}
 
                  /* Create them */
                  $tvObject = $this->modx->newObject('modTemplateVar');
@@ -2704,7 +2894,7 @@ class Provisioner {
 
              }
 
-        } // Have TV's
+        } // if ( $haveTvs )
 
         /* If smart mode is on create the associated data */
         if ( $smartmode ) {
@@ -2804,42 +2994,74 @@ class Provisioner {
 
             } // TV resource
 
-       } // TV smart mode
+       } // if ( $smartmode )
 
         /* Next, get the snippets if needed and assign them the new categories */
         if ( $haveSnippets ) {
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Importing snippets.' );
 
-            $this->_importLogHeader("Creating snippets .........");
+            	$this->_importLogHeader("Creating snippets .........");
 
-            /* Delete existing if requested */
-            if ( $deletebefore ) {
+		/* Delete existing if requested */
+		if ( $deletebefore ) {
+			$result = $this->_deleteElements('modSnippet', $errorstring);
+			if ( !$result ){
+				if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _deleteElements returned false. Aborting.' );
 
-                $result = $this->_deleteElements('modSnippet', $errorstring);
-                if ( !$result ) return false;
-            }
+				return false;
+			}else{
+				if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : _deleteElements returned true.' );
+			}
+		}
 
-            foreach ($evoSnippets as $snippet ) {
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Going into Create foreach.' );
 
-                 $snippet['category'] = $categoryMap[$snippet['category']];
+		$iterator = 0;
 
-                 /* Create them */
-                 $snippetObject = $this->modx->newObject('modSnippet');
-                 /* Remove any : characters */
-                 $snippet['name'] = str_replace(':', '-', $snippet['name']);
-                 $snippetObject->fromArray($snippet);
-                 if ($snippetObject->save() == false) {
+		foreach ($evoSnippets as $snippet ) {
+			$iterator++;
+			
+			 $snippet['category'] =  array_key_exists($snippet['category'],$categoryMap) ? $categoryMap[$snippet['category']] : 0;
 
-                        $errorstring = $this->modx->lexicon('evoimportsnippetfail');
-                        $errorstring .= $snippet['name'];
-                        return false;
-                }
+			/*
+				Make sure we dont make duplicates
+			*/
+			$snippetObject = $this->modx->getObject('modSnippet',array('name'=>$snippet['name']));
 
-                $name = $snippet['name'];
-                $this->_importLog("Created snippet $name ");
+			if($snippetObject){
+				if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Snippet exists. Removing.' );
+				$snippetObject->remove();
+				unset($snippetObject);
+			}else{
 
-             }
+			}
 
-        } // Have snippets
+			 /* Create them */
+			 $snippetObject = $this->modx->newObject('modSnippet');
+
+			 /* Remove any : characters */
+			 $snippet['name'] = str_replace(':', '-', $snippet['name']);
+			 $snippetObject->fromArray($snippet);
+
+			 if ($snippetObject->save() == false) {
+
+				if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Exiting foreach. '.$iterator.' snippets imported.' );
+
+
+				$errorstring = $this->modx->lexicon('evoimportsnippetfail');
+				$errorstring .= $snippet['name'];
+				return false;
+			}
+
+			$name = $snippet['name'];
+			$this->_importLog("Created snippet $name ");
+
+		}
+
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Exiting foreach. '.$iterator.' snippets imported.' );
+
+
+        } // if ( $haveSnippets )
 
          /* Next, get the chunks if needed and assign them the new categories */
         if ( $haveChunks ) {
@@ -2855,7 +3077,22 @@ class Provisioner {
 
             foreach ($evoChunks as $chunk ) {
 
-                 $chunk['category'] = $categoryMap[$chunk['category']];
+		/*
+			Make sure we dont make duplicates
+		*/
+		$chunkObject = $this->modx->getObject('modChunk',array('name'=>$chunk['name']));
+
+		if($chunkObject){
+			if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._importEvoSite() : Chunk exists. Removing.' );
+			$chunkObject->remove();
+			unset($chunkObject);
+		}else{
+
+		}
+
+		$chunk['category'] =  array_key_exists($chunk['category'],$categoryMap) ? $categoryMap[$chunk['category']] : 0;
+
+                 //$chunk['category'] = $categoryMap[$chunk['category']];
 
                  /* Tag convert */
                  $translator->translate($chunk['snippet']);
@@ -2875,7 +3112,7 @@ class Provisioner {
 
              }
 
-        } // Have chunks
+        } // if ( $haveChunks )
 
         /* Next, get the plugins if needed and assign them the new categories */
         if ( $havePlugins ) {
@@ -2953,7 +3190,7 @@ class Provisioner {
                     
             } // Plugin smartmode
 
-        } // Have plugins
+        } // if ( $havePlugins )
 
         /* Clear the cache */
         $this->_importLogHeader("Clearing the site cache .........");
@@ -2972,7 +3209,7 @@ class Provisioner {
          $this->_closeImportLog();
          return true;
        
-   }
+   } // importEvoSite
 
    /**
      * Evolution site import resources
@@ -2994,18 +3231,31 @@ class Provisioner {
        $metatagArray = array();
        $docgroupArray = array();
 
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._getAllEvoResources()' );
+
+
        $url = $this->_connectorURL."/assets/snippets/revogateway/connectors/index.php?action=getall&entity=resources";
+
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._getAllEvoResources() : Remote url build as "'.$url.'".' );
+
        curl_setopt($this->_curlSession, CURLOPT_URL, $url);
        $result = curl_exec($this->_curlSession);
+
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._getAllEvoResources() : curl_exec done.' );
 
        /* Decode the result */
        $resourceArray = $this->modx->fromJSON($result);
 
+	if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._getAllEvoResources() : modx->fromJSON() done.' );
+
        /* Check if we succeeded */
        if ( $resourceArray['success'] != 1 ) {
 
-            $errorstring = $this->modx->lexicon('failedtogetremoteresource')." ".$resourceArray['message'];
-            return false;
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._getAllEvoResources() : $resourceArray["success"] was false (=!1). Aborting.' );
+		if($this->debugmode) $this->modx->log(modX::LOG_LEVEL_DEBUG, 'Provisioner._getAllEvoResources() : Aborting.' );
+
+		$errorstring = $this->modx->lexicon('failedtogetremoteresource')." ".$resourceArray['message'];
+		return false;
         }
 
         /* Assign the resources */
